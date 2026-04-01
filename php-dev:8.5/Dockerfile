@@ -10,8 +10,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         libffi-dev \
         libfreetype6-dev \
         libgmp-dev \
+        cmake \
         libicu-dev \
-        liblexbor-dev \
         libjpeg62-turbo-dev \
         libldap2-dev \
         libmagickwand-dev \
@@ -27,6 +27,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         libzip-dev \
         zlib1g-dev \
     && rm -rf /var/lib/apt/lists/*
+
+# ── Lexbor (required by PHP 8.5 dom for HTML5 parsing; not in bookworm repos) ─
+RUN git clone --depth 1 https://github.com/lexbor/lexbor.git /tmp/lexbor \
+    && cmake -S /tmp/lexbor -B /tmp/lexbor/build -DLEXBOR_BUILD_SHARED=ON \
+    && cmake --build /tmp/lexbor/build -j"$(nproc)" \
+    && cmake --install /tmp/lexbor/build \
+    && ldconfig \
+    && rm -rf /tmp/lexbor
 
 # ── Configure extensions that need flags ─────────────────────────────────────
 RUN docker-php-ext-configure gd \
