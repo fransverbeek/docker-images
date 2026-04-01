@@ -5,6 +5,8 @@ on:
     branches: [main]
     paths:
       - 'php-dev:8.5/**'
+    tags:
+      - 'v*.*.*'
   workflow_dispatch:
 
 jobs:
@@ -23,10 +25,17 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - uses: docker/metadata-action@v5
+        id: meta
+        with:
+          images: ghcr.io/fransverbeek/php-dev
+          tags: |
+            type=semver,pattern=8.5v{{version}}
+            type=raw,value=8.5
+            type=raw,value=latest
+
       - uses: docker/build-push-action@v6
         with:
           context: ./php-dev:8.5
           push: true
-          tags: |
-            ghcr.io/fransverbeek/php-dev:8.5
-            ghcr.io/fransverbeek/php-dev:latest
+          tags: ${{ steps.meta.outputs.tags }}
