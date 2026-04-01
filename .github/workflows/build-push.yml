@@ -1,0 +1,32 @@
+name: Build and push php-dev
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'php-dev:8.5/**'
+  workflow_dispatch:
+
+jobs:
+  build-push:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: ./php-dev:8.5
+          push: true
+          tags: |
+            ghcr.io/fransverbeek/php-dev:8.5
+            ghcr.io/fransverbeek/php-dev:latest
