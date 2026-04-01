@@ -1,121 +1,62 @@
-FROM php:8.5-apache
+FROM debian:bookworm-slim
+
+ARG PHP_VERSION=8.5
 
 ENV DEBIAN_FRONTEND=noninteractive
 
-# ── System libraries ──────────────────────────────────────────────────────────
-RUN apt-get update && apt-get install -y --no-install-recommends \
-        ca-certificates curl git gnupg unzip wget \
-        libbz2-dev \
-        libcurl4-openssl-dev \
-        libffi-dev \
-        libfreetype6-dev \
-        libgmp-dev \
-        cmake \
-        libicu-dev \
-        libjpeg62-turbo-dev \
-        libldap2-dev \
-        libmagickwand-dev \
-        libmemcached-dev \
-        libpng-dev \
-        libpq-dev \
-        libreadline-dev \
-        libsodium-dev \
-        libtidy-dev \
-        libwebp-dev \
-        libxml2-dev \
-        libxslt-dev \
-        libzip-dev \
-        zlib1g-dev \
-    && rm -rf /var/lib/apt/lists/*
+# ── Base packages + Sury PHP repository ───────────────────────────────────────
+RUN set -eux; \
+    apt-get update; \
+    apt-get upgrade -y; \
+    apt-get install -y --no-install-recommends \
+        apt-transport-https ca-certificates wget gnupg lsb-release locales openssl; \
+    localedef -i en_US -c -f UTF-8 -A /usr/share/locale/locale.alias en_US.UTF-8; \
+    DEBIAN_CODE_NAME=$(lsb_release -c -s); \
+    wget -O /usr/share/keyrings/sury-archive-keyring.gpg https://packages.sury.org/php/apt.gpg; \
+    echo "deb [signed-by=/usr/share/keyrings/sury-archive-keyring.gpg] https://packages.sury.org/php/ ${DEBIAN_CODE_NAME} main" \
+        | tee /etc/apt/sources.list.d/php.list; \
+    apt-get update
 
-# ── Lexbor (required by PHP 8.5 dom for HTML5 parsing; not in bookworm repos) ─
-RUN git clone --depth 1 https://github.com/lexbor/lexbor.git /tmp/lexbor \
-    && cmake -S /tmp/lexbor -B /tmp/lexbor/build -DLEXBOR_BUILD_SHARED=ON \
-    && cmake --build /tmp/lexbor/build -j"$(nproc)" \
-    && cmake --install /tmp/lexbor/build \
-    && ldconfig \
-    && rm -rf /tmp/lexbor
+# ── Apache + PHP + extensions ─────────────────────────────────────────────────
+# php-common bundles: bcmath, calendar, exif, ftp, gettext, pcntl, shmop,
+#   sockets, sysvmsg, sysvsem, sysvshm, tokenizer
+# php-xml bundles:    dom, simplexml, xml, xmlreader, xmlwriter, xsl
+# opcache is built-in as of PHP 8.5 (no separate package)
+RUN set -eux; \
+    mkdir -p /usr/share/man/man1; \
+    apt-get install -y --no-install-recommends \
+        procps unzip bzip2 patch git \
+        apache2 libapache2-mod-php${PHP_VERSION} \
+        php${PHP_VERSION}-apcu \
+        php${PHP_VERSION}-bcmath \
+        php${PHP_VERSION}-bz2 \
+        php${PHP_VERSION}-cli \
+        php${PHP_VERSION}-common \
+        php${PHP_VERSION}-curl \
+        php${PHP_VERSION}-gd \
+        php${PHP_VERSION}-gmp \
+        php${PHP_VERSION}-imagick \
+        php${PHP_VERSION}-intl \
+        php${PHP_VERSION}-ldap \
+        php${PHP_VERSION}-mbstring \
+        php${PHP_VERSION}-memcached \
+        php${PHP_VERSION}-mongodb \
+        php${PHP_VERSION}-mysql \
+        php${PHP_VERSION}-pgsql \
+        php${PHP_VERSION}-readline \
+        php${PHP_VERSION}-redis \
+        php${PHP_VERSION}-soap \
+        php${PHP_VERSION}-tidy \
+        php${PHP_VERSION}-xdebug \
+        php${PHP_VERSION}-xml \
+        php${PHP_VERSION}-zip \
+        php-pear; \
+    update-alternatives --set php /usr/bin/php${PHP_VERSION}; \
+    apt-get autoremove --purge -y; \
+    apt-get clean; \
+    rm -rf /var/lib/apt/lists/*
 
-# ── Configure extensions that need flags ─────────────────────────────────────
-RUN docker-php-ext-configure gd \
-        --with-freetype \
-        --with-jpeg \
-        --with-webp \
-    && docker-php-ext-configure ldap \
-        --with-libdir="lib/$(dpkg-architecture --query DEB_BUILD_MULTIARCH)"
-
-# ── Built-in extensions ───────────────────────────────────────────────────────
-RUN docker-php-ext-install -j"$(nproc)" \
-    bcmath \
-    bz2 \
-    calendar \
-    curl \
-    dom \
-    exif \
-    ffi \
-    ftp \
-    gd \
-    gettext \
-    gmp \
-    intl \
-    ldap \
-    mbstring \
-    mysqli \
-    opcache \
-    pcntl \
-    pdo \
-    pdo_mysql \
-    pdo_pgsql \
-    pgsql \
-    readline \
-    shmop \
-    simplexml \
-    soap \
-    sockets \
-    sodium \
-    sysvmsg \
-    sysvsem \
-    sysvshm \
-    tidy \
-    xml \
-    xmlreader \
-    xmlwriter \
-    xsl \
-    zip
-
-# ── PECL extensions ───────────────────────────────────────────────────────────
-# igbinary + msgpack must be installed first — redis/memcached depend on them
-RUN pecl install igbinary \
-    && docker-php-ext-enable igbinary
-
-RUN pecl install msgpack \
-    && docker-php-ext-enable msgpack
-
-RUN pecl install apcu \
-    && docker-php-ext-enable apcu
-
-# Redis with igbinary + msgpack serialiser support
-RUN pecl install --configureoptions \
-        'enable-redis-igbinary="yes" enable-redis-msgpack="yes" enable-redis-lzf="no" enable-redis-zstd="no"' \
-        redis \
-    && docker-php-ext-enable redis
-
-# Memcached with igbinary + msgpack support
-RUN pecl install --configureoptions \
-        'enable-memcached-igbinary="yes" enable-memcached-msgpack="yes" enable-memcached-json="yes"' \
-        memcached \
-    && docker-php-ext-enable memcached
-
-RUN pecl install mongodb \
-    && docker-php-ext-enable mongodb
-
-RUN pecl install imagick \
-    && docker-php-ext-enable imagick
-
-RUN pecl install xdebug \
-    && docker-php-ext-enable xdebug
-
-# ── Node.js LTS ───────────────────────────────────────────────────────────────
+# ── Node.js LTS ────────────────────────────────────────────────────────────────
 RUN curl -fsSL https://deb.nodesource.com/setup_lts.x | bash - \
     && apt-get install -y nodejs \
     && rm -rf /var/lib/apt/lists/* \
@@ -125,7 +66,7 @@ RUN curl -fsSL https://deb.nodesource.com/setup_lts.x | bash - \
 COPY --from=composer:latest /usr/bin/composer /usr/local/bin/composer
 
 # ── Apache ────────────────────────────────────────────────────────────────────
-RUN a2enmod rewrite headers ssl
+RUN a2enmod rewrite headers ssl php${PHP_VERSION}
 
 RUN cat > /etc/apache2/sites-available/000-default.conf <<'EOF'
 <VirtualHost *:80>
@@ -144,7 +85,7 @@ RUN cat > /etc/apache2/sites-available/000-default.conf <<'EOF'
 EOF
 
 # ── PHP configuration ─────────────────────────────────────────────────────────
-RUN cat > /usr/local/etc/php/conf.d/99-custom.ini <<'EOF'
+RUN cat > /etc/php/${PHP_VERSION}/apache2/conf.d/99-custom.ini <<'EOF'
 ; ── Error handling ────────────────────────────────────────────────────────────
 display_errors         = On
 display_startup_errors = On
@@ -164,32 +105,37 @@ date.timezone         = UTC
 default_charset       = UTF-8
 
 ; ── OPcache ───────────────────────────────────────────────────────────────────
-; Enabled in dev for realistic performance; timestamps checked on every request
-opcache.enable                 = 1
-opcache.enable_cli             = 1
-opcache.memory_consumption     = 128
+opcache.enable                  = 1
+opcache.enable_cli              = 1
+opcache.memory_consumption      = 128
 opcache.interned_strings_buffer = 16
-opcache.max_accelerated_files  = 20000
-opcache.validate_timestamps    = 1
-opcache.revalidate_freq        = 0
-opcache.fast_shutdown          = 1
+opcache.max_accelerated_files   = 20000
+opcache.validate_timestamps     = 1
+opcache.revalidate_freq         = 0
+opcache.fast_shutdown           = 1
 
 ; ── APCu ──────────────────────────────────────────────────────────────────────
 apc.enable_cli = 1
 EOF
 
-RUN cat > /usr/local/etc/php/conf.d/99-xdebug.ini <<'EOF'
+# ── Xdebug configuration ──────────────────────────────────────────────────────
+RUN cat > /etc/php/${PHP_VERSION}/apache2/conf.d/99-xdebug.ini <<'EOF'
 [xdebug]
-xdebug.mode              = debug,develop
+xdebug.mode               = debug,develop
 xdebug.start_with_request = yes
-xdebug.client_host       = host.docker.internal
-xdebug.client_port       = 9003
-xdebug.idekey            = PHPSTORM
-xdebug.log_level         = 0
-; Raise if you hit the limit on deeply nested calls (e.g. large Laravel apps)
-xdebug.max_nesting_level = 512
+xdebug.client_host        = host.docker.internal
+xdebug.client_port        = 9003
+xdebug.idekey             = PHPSTORM
+xdebug.log_level          = 0
+xdebug.max_nesting_level  = 512
 EOF
+
+# ── Apache entrypoint ─────────────────────────────────────────────────────────
+ENV APACHE_RUN_USER=www-data
+ENV APACHE_RUN_GROUP=www-data
 
 WORKDIR /var/www/html
 
 EXPOSE 80 443
+
+CMD ["apache2ctl", "-D", "FOREGROUND"]
