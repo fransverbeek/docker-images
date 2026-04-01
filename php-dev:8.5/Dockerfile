@@ -11,6 +11,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         libfreetype6-dev \
         libgmp-dev \
         libicu-dev \
+        liblexbor-dev \
         libjpeg62-turbo-dev \
         libldap2-dev \
         libmagickwand-dev \
