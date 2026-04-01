@@ -25,7 +25,7 @@ RUN set -eux; \
 RUN set -eux; \
     mkdir -p /usr/share/man/man1; \
     apt-get install -y --no-install-recommends \
-        procps unzip bzip2 patch git \
+        procps unzip bzip2 patch git vim iputils-ping \
         apache2 libapache2-mod-php${PHP_VERSION} \
         php${PHP_VERSION}-apcu \
         php${PHP_VERSION}-bcmath \
